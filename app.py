@@ -22,9 +22,8 @@ def lookup_payment():
     merchant_ref = request.args.get("merchant_ref", "")
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Vulnerable to SQL Injection (CWE-89): direct string interpolation of user input
-    query = f"SELECT id, merchant_ref, amount_cents, status FROM payments WHERE merchant_ref = '{merchant_ref}'"
-    cursor.execute(query)
+    query = "SELECT id, merchant_ref, amount_cents, status FROM payments WHERE merchant_ref = ?"
+    cursor.execute(query, (merchant_ref,))
     row = cursor.fetchone()
     conn.close()
     if not row:
