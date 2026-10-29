@@ -1,6 +1,7 @@
 """Team A — Payment Processing Microservice."""
 
 import os
+import re
 import sqlite3
 import subprocess
 from flask import Flask, jsonify, request
@@ -21,9 +22,8 @@ def lookup_payment():
     merchant_ref = request.args.get("merchant_ref", "")
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Vulnerable to SQL Injection (CWE-89): direct string interpolation of user input
-    query = f"SELECT id, merchant_ref, amount_cents, status FROM payments WHERE merchant_ref = '{merchant_ref}'"
-    cursor.execute(query)
+    query = "SELECT id, merchant_ref, amount_cents, status FROM payments WHERE merchant_ref = ?"
+    cursor.execute(query, (merchant_ref,))
     row = cursor.fetchone()
     conn.close()
     if not row:
@@ -34,11 +34,24 @@ def lookup_payment():
 @app.route("/api/v1/payments/receipt", methods=["POST"])
 def export_receipt():
     """Generate a receipt archive for the requested invoice ID."""
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
     invoice_id = data.get("invoice_id", "default")
-    # Vulnerable to OS Command Injection (CWE-78): shell=True with unsanitized user input
-    cmd = f"tar -czf /tmp/receipt-{invoice_id}.tar.gz /var/ receipts/{invoice_id}.txt"
-    output = subprocess.check_output(cmd, shell=True, text=True)
+    if invoice_id is None:
+        invoice_id = "default"
+    if isinstance(invoice_id, int):
+        invoice_id = str(invoice_id)
+    if not isinstance(invoice_id, str) or not re.fullmatch(r"[a-zA-Z0-9_-]+", invoice_id):
+        return jsonify({"error": "Invalid invoice_id"}), 400
+    cmd = [
+        "tar",
+        "-czf",
+        f"/tmp/receipt-{invoice_id}.tar.gz",
+        "/var/",
+        f"receipts/{invoice_id}.txt",
+    ]
+    output = subprocess.check_output(cmd, text=True)
     return jsonify({"status": "exported", "details": output})
 
 
